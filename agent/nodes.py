@@ -505,13 +505,127 @@ def recipe_execution_complete_node(state: RecipeAgentState) -> Dict[str, Any]:
             else:
                 summary_message += f"\n❌ {output['tool_name']}: {output.get('error', 'Unknown error')}"
         
+        summary_message += "\n\n🛒 **Generating shopping cart recommendations...**"
         display_messages.append(summary_message)
+        
+        # Don't mark as complete if we have tool outputs - let it flow to shopping cart
+        return {
+            "display_messages": display_messages,
+            "processing_complete": False,
+            "workflow_stage": "recipe_execution_summary"
+        }
     else:
         display_messages.append("🎉 **Recipe process completed!**")
+        return {
+            "display_messages": display_messages,
+            "processing_complete": True,
+            "workflow_stage": "complete"
+        }
+
+
+def shopping_cart_recommendation_node(state: RecipeAgentState) -> Dict[str, Any]:
+    """Analyze tool call responses and recommend a shopping cart."""
+    display_messages = []
+    tool_outputs = state.get("tool_outputs", {})
+    selected_recipe = state.get("selected_recipe", {})
+    
+    if not tool_outputs:
+        return {
+            "error_message": "No tool outputs available for shopping cart recommendation",
+            "processing_complete": True,
+            "display_messages": display_messages
+        }
+    
+    # Analyze tool responses to extract shopping information
+    shopping_items = []
+    store_recommendations = []
+    price_comparisons = []
+    
+    for tool_id, output in tool_outputs.items():
+        if output.get("status") == "success":
+            tool_name = output.get("tool_name", "")
+            result = output.get("result", "")
+            
+            # Extract shopping information based on tool type
+            if "search" in tool_name.lower() or "find" in tool_name.lower():
+                # Parse search results for items and stores
+                if isinstance(result, dict):
+                    items = result.get("items", [])
+                    stores = result.get("stores", [])
+                    prices = result.get("prices", [])
+                    
+                    shopping_items.extend(items)
+                    store_recommendations.extend(stores)
+                    price_comparisons.extend(prices)
+                elif isinstance(result, str):
+                    # Parse text results for shopping information
+                    lines = result.split('\n')
+                    for line in lines:
+                        if any(keyword in line.lower() for keyword in ['store', 'shop', 'market']):
+                            store_recommendations.append(line.strip())
+                        elif any(keyword in line.lower() for keyword in ['item', 'ingredient', 'product']):
+                            shopping_items.append(line.strip())
+                        elif any(keyword in line.lower() for keyword in ['price', '$', 'cost']):
+                            price_comparisons.append(line.strip())
+            
+            elif "price" in tool_name.lower() or "compare" in tool_name.lower():
+                # Handle price comparison results
+                if isinstance(result, (list, dict)):
+                    price_comparisons.append(str(result))
+                else:
+                    price_comparisons.append(result)
+    
+    # Generate shopping cart recommendation
+    recipe_title = selected_recipe.get('title', 'Your Recipe')
+    
+    cart_recommendation = f"""🛒 **Shopping Cart Recommendation for {recipe_title}**
+
+"""
+    
+    if shopping_items:
+        cart_recommendation += "**📋 Recommended Items:**\n"
+        unique_items = list(set(shopping_items))[:10]  # Limit to 10 unique items
+        for i, item in enumerate(unique_items, 1):
+            cart_recommendation += f"{i}. {item}\n"
+        cart_recommendation += "\n"
+    
+    if store_recommendations:
+        cart_recommendation += "**🏪 Recommended Stores:**\n"
+        unique_stores = list(set(store_recommendations))[:5]  # Limit to 5 unique stores
+        for i, store in enumerate(unique_stores, 1):
+            cart_recommendation += f"{i}. {store}\n"
+        cart_recommendation += "\n"
+    
+    if price_comparisons:
+        cart_recommendation += "**💰 Price Information:**\n"
+        unique_prices = list(set(price_comparisons))[:5]  # Limit to 5 price entries
+        for i, price in enumerate(unique_prices, 1):
+            cart_recommendation += f"{i}. {price}\n"
+        cart_recommendation += "\n"
+    
+    # Add shopping tips
+    cart_recommendation += """**💡 Shopping Tips:**
+• Compare prices across different stores before purchasing
+• Check for seasonal discounts and bulk buying options
+• Consider organic vs. regular options based on your preference
+• Don't forget to check store loyalty programs for additional savings
+
+**Ready to go shopping? Happy cooking! 👨‍🍳👩‍🍳**"""
+    
+    display_messages.append(cart_recommendation)
+    
+    # Store shopping cart data in state
+    shopping_cart_data = {
+        "items": shopping_items,
+        "stores": store_recommendations,
+        "prices": price_comparisons,
+        "recommendation_generated": True
+    }
     
     return {
         "display_messages": display_messages,
-        "processing_complete": True,
-        "workflow_stage": "complete"
+        "shopping_cart_data": shopping_cart_data,
+        "workflow_stage": "shopping_cart_complete",
+        "processing_complete": True
     }
 

@@ -42,5 +42,8 @@ class RecipeAgentState(TypedDict):
     # Tool outputs
     tool_outputs: Dict[str, any]
     pending_tool_calls: List[Dict]  # Tool calls waiting to be executed
+    
+    # Shopping cart data
+    shopping_cart_data: Optional[Dict[str, Any]]  # Shopping cart recommendations
    
 

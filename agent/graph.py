@@ -17,7 +17,8 @@ from agent.nodes import (
     recipe_plan_confirm_node,
     user_approval_node,
     tool_execution_node,
-    recipe_execution_complete_node
+    recipe_execution_complete_node,
+    shopping_cart_recommendation_node
 )
 from agent.tools import recipe_tools
 
@@ -114,6 +115,7 @@ def create_recipe_agent(include_mcp_tools: bool = False) -> StateGraph:
     workflow.add_node("user_approval", user_approval_node)  # New approval node
     workflow.add_node("tool_execution", tool_execution_node)  # New tool execution node
     workflow.add_node("recipe_execution_complete", recipe_execution_complete_node)  # New completion node
+    workflow.add_node("shopping_cart_recommendation", shopping_cart_recommendation_node)  # New shopping cart node
         
     # Prepare tools
     all_tools = recipe_tools.copy()
@@ -199,8 +201,18 @@ def create_recipe_agent(include_mcp_tools: bool = False) -> StateGraph:
     # Tool execution -> Recipe execution complete
     workflow.add_edge("tool_execution", "recipe_execution_complete")
 
-    # Recipe execution complete -> END
-    workflow.add_edge("recipe_execution_complete", END)
+    # Recipe execution complete -> Shopping cart recommendation
+    workflow.add_conditional_edges(
+        "recipe_execution_complete",
+        lambda state: "shopping_cart_recommendation" if state.get("tool_outputs") else "end",
+        {
+            "shopping_cart_recommendation": "shopping_cart_recommendation",
+            "end": END
+        }
+    )
+
+    # Shopping cart recommendation -> END
+    workflow.add_edge("shopping_cart_recommendation", END)
     
     # Create checkpointer for state persistence during interrupts
     checkpointer = MemorySaver()
