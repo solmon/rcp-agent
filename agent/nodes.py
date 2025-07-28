@@ -462,16 +462,28 @@ def tool_execution_node(state: RecipeAgentState) -> Dict[str, Any]:
         
         # Check if we need to continue with more LLM processing or complete
         successful_executions = [output for output in tool_outputs.values() if output.get("status") == "success"]
+        current_stage = state.get("workflow_stage", "")
         
         if successful_executions:
-            # Tools executed successfully, continue to completion
-            return {
-                "tool_outputs": tool_outputs,
-                "workflow_stage": "recipe_execution_complete",
-                "display_messages": display_messages,
-                "pending_tool_calls": [],  # Clear pending calls
-                "processing_complete": False
-            }
+            # Tools executed successfully, determine next stage based on current workflow
+            if current_stage == "cart_tool_execution":
+                # Cart tools executed, go to shopping cart recommendation
+                return {
+                    "tool_outputs": tool_outputs,
+                    "workflow_stage": "shopping_cart_recommendation",
+                    "display_messages": display_messages,
+                    "pending_tool_calls": [],  # Clear pending calls
+                    "processing_complete": False
+                }
+            else:
+                # Regular tool execution, continue to completion
+                return {
+                    "tool_outputs": tool_outputs,
+                    "workflow_stage": "recipe_execution_complete",
+                    "display_messages": display_messages,
+                    "pending_tool_calls": [],  # Clear pending calls
+                    "processing_complete": False
+                }
         else:
             # All tools failed, complete with error
             return {
@@ -530,6 +542,130 @@ def recipe_execution_complete_node(state: RecipeAgentState) -> Dict[str, Any]:
             "display_messages": display_messages,
             "processing_complete": True,
             "workflow_stage": "complete"
+        }
+
+
+def create_shopping_cart_node(state: RecipeAgentState) -> Dict[str, Any]:
+    """Create shopping cart by analyzing tool responses and generating add-to-cart tool calls."""
+    display_messages = []
+    tool_outputs = state.get("tool_outputs", {})
+    selected_recipe = state.get("selected_recipe", {})
+    plan_extract = state.get("plan_extract", "")
+    
+    if not tool_outputs:
+        return {
+            "error_message": "No tool outputs available for shopping cart creation",
+            "processing_complete": True,
+            "display_messages": display_messages
+        }
+
+    # Prepare context from all tool responses
+    tool_responses_context = []
+    for tool_id, output in tool_outputs.items():
+        if output.get("status") == "success":
+            tool_name = output.get("tool_name", "")
+            result = output.get("result", "")
+            args = output.get("args", {})
+            
+            context_entry = f"Tool: {tool_name}\nArgs: {args}\nResult: {result}\n"
+            tool_responses_context.append(context_entry)
+    
+    # Combine all context
+    combined_context = "\n---\n".join(tool_responses_context)
+    
+    # Create prompt for shopping cart creation
+    shopping_cart_prompt = f"""Based on the recipe and tool execution results, create add-to-cart actions for the required ingredients.
+
+Recipe: {selected_recipe.get('title', 'Recipe')}
+Plan: {plan_extract}
+
+Tool Execution Results:
+{combined_context}
+
+Your task:
+1. Analyze the tool responses to identify stores, ingredients, and pricing information
+2. Generate appropriate add-to-cart tool calls for the best available options
+3. Focus on creating actionable shopping cart additions
+
+Generate tool calls to add items to shopping carts at the most suitable stores based on the search results."""
+
+    # Get available MCP tools for shopping cart operations
+    from agent.graph import get_mcp_tools
+    from agent.tools import recipe_tools
+    
+    all_tools = recipe_tools.copy()
+    mcp_tools = get_mcp_tools()
+    if mcp_tools:
+        all_tools.extend(mcp_tools)
+        
+    # Filter tools that are related to cart operations
+    cart_tools = []
+    for tool in all_tools:
+        tool_name_lower = tool.name.lower()
+        if any(keyword in tool_name_lower for keyword in ['cart', 'add', 'buy', 'purchase', 'order', 'checkout']):
+            cart_tools.append(tool)
+    
+    if not cart_tools:
+        # No cart-specific tools available, use all tools
+        cart_tools = all_tools
+    
+    # LLM setup for cart creation
+    llm = ChatGoogleGenerativeAI(
+        model="gemini-2.0-flash",
+        google_api_key=GEMINI_API_KEY,
+        temperature=0.1,
+        transport="rest",
+        client_options={"api_endpoint": "https://generativelanguage.googleapis.com"}
+    )
+    
+    try:
+        display_messages.append("🛒 Creating shopping cart from search results...")
+        
+        # Bind cart tools and invoke LLM
+        if cart_tools:
+            llm_with_tools = llm.bind_tools(cart_tools)
+            tool_names = ", ".join([tool.name for tool in cart_tools])
+            system_prompt = f"You are a shopping assistant. Use the available tools ({tool_names}) to add items to shopping carts. Analyze the provided tool responses and create appropriate add-to-cart actions."
+            
+            messages = [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=shopping_cart_prompt)
+            ]
+            
+            response = llm_with_tools.invoke(messages)
+        else:
+            # No tools available, just provide a response
+            response = llm.invoke([HumanMessage(content=shopping_cart_prompt)])
+        
+        # Check if there are tool calls to execute
+        if hasattr(response, 'tool_calls') and response.tool_calls:
+            display_messages.append(f"🔧 Generated {len(response.tool_calls)} shopping cart actions")
+            
+            return {
+                "workflow_stage": "cart_tool_execution",
+                "pending_tool_calls": response.tool_calls,
+                "display_messages": display_messages,
+                "processing_complete": False
+            }
+        else:
+            # No tool calls generated, provide a fallback response
+            display_messages.append("💭 No direct cart actions available, generating recommendations...")
+            
+            return {
+                "workflow_stage": "shopping_cart_recommendation",
+                "display_messages": display_messages,
+                "processing_complete": False
+            }
+            
+    except Exception as e:
+        error_msg = f"Error creating shopping cart: {str(e)}"
+        display_messages.append(f"❌ {error_msg}")
+        
+        return {
+            "error_message": error_msg,
+            "workflow_stage": "shopping_cart_recommendation",  # Fallback to recommendation
+            "display_messages": display_messages,
+            "processing_complete": False
         }
 
 

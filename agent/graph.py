@@ -18,6 +18,7 @@ from agent.nodes import (
     user_approval_node,
     tool_execution_node,
     recipe_execution_complete_node,
+    create_shopping_cart_node,
     shopping_cart_recommendation_node
 )
 from agent.tools import recipe_tools
@@ -116,6 +117,7 @@ def create_recipe_agent(include_mcp_tools: bool = False, use_checkpointer: bool 
     workflow.add_node("user_approval", user_approval_node)  # New approval node
     workflow.add_node("tool_execution", tool_execution_node)  # New tool execution node
     workflow.add_node("recipe_execution_complete", recipe_execution_complete_node)  # New completion node
+    workflow.add_node("create_shopping_cart", create_shopping_cart_node)  # New shopping cart creation node
     workflow.add_node("shopping_cart_recommendation", shopping_cart_recommendation_node)  # New shopping cart node
         
     # Prepare tools
@@ -176,13 +178,13 @@ def create_recipe_agent(include_mcp_tools: bool = False, use_checkpointer: bool 
     workflow.add_conditional_edges(
         "user_approval",
         lambda state: (
-            "recipe_plan_llm" if state.get("recipe_confirmed") and not state.get("recipe_plan_confirmed") else
+            # "recipe_plan_llm" if state.get("recipe_confirmed") and not state.get("recipe_plan_confirmed") else
             "recipe_execution_llm" if state.get("recipe_plan_confirmed") else
             "recipe_llm" if state.get("workflow_stage") == "recipe_search" else
             END
         ),
         {
-            "recipe_plan_llm": "recipe_plan_llm",
+            # "recipe_plan_llm": "recipe_plan_llm",
             "recipe_execution_llm": "recipe_execution_llm", 
             "recipe_llm": "recipe_llm",
             "end": END
@@ -199,16 +201,39 @@ def create_recipe_agent(include_mcp_tools: bool = False, use_checkpointer: bool 
         }
     )
 
-    # Tool execution -> Recipe execution complete
-    workflow.add_edge("tool_execution", "recipe_execution_complete")
-
-    # Recipe execution complete -> Shopping cart recommendation
+    # Tool execution -> Route based on workflow stage
     workflow.add_conditional_edges(
-        "recipe_execution_complete",
-        lambda state: "shopping_cart_recommendation" if state.get("tool_outputs") else "end",
+        "tool_execution",
+        lambda state: (
+            "shopping_cart_recommendation" if state.get("workflow_stage") == "shopping_cart_recommendation" else
+            "recipe_execution_complete"
+        ),
         {
             "shopping_cart_recommendation": "shopping_cart_recommendation",
+            "recipe_execution_complete": "recipe_execution_complete"
+        }
+    )
+
+    # Recipe execution complete -> Create shopping cart
+    workflow.add_conditional_edges(
+        "recipe_execution_complete",
+        lambda state: "create_shopping_cart" if state.get("tool_outputs") else "end",
+        {
+            "create_shopping_cart": "create_shopping_cart",
             "end": END
+        }
+    )
+
+    # Create shopping cart -> Route based on whether tool calls were generated
+    workflow.add_conditional_edges(
+        "create_shopping_cart",
+        lambda state: (
+            "tool_execution" if state.get("workflow_stage") == "cart_tool_execution" else
+            "shopping_cart_recommendation"
+        ),
+        {
+            "tool_execution": "tool_execution",
+            "shopping_cart_recommendation": "shopping_cart_recommendation"
         }
     )
 
