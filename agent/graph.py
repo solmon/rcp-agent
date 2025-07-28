@@ -93,13 +93,14 @@ def should_continue(state: RecipeAgentState) -> Literal["continue", "end"]:
     return "continue"
 
 
-def create_recipe_agent(include_mcp_tools: bool = False) -> StateGraph:
+def create_recipe_agent(include_mcp_tools: bool = False, use_checkpointer: bool = True) -> StateGraph:
     
     
     """Create the Recipe Agent graph with enhanced workflow.
     
     Args:
         include_mcp_tools: Whether to include MCP tools in the agent
+        use_checkpointer: Whether to use a checkpointer for state persistence (disable for LangGraph Studio)
     """
     
     # Create the graph
@@ -214,30 +215,34 @@ def create_recipe_agent(include_mcp_tools: bool = False) -> StateGraph:
     # Shopping cart recommendation -> END
     workflow.add_edge("shopping_cart_recommendation", END)
     
-    # Create checkpointer for state persistence during interrupts
-    checkpointer = MemorySaver()
-    
-    # Compile the graph with interrupts at approval points and checkpointer
-    return workflow.compile(interrupt_before=["user_approval"], checkpointer=checkpointer)
+    # Compile the graph with or without checkpointer based on environment
+    if use_checkpointer:
+        # Create checkpointer for state persistence during interrupts
+        checkpointer = MemorySaver()
+        # Compile the graph with interrupts at approval points and checkpointer
+        return workflow.compile(interrupt_before=["user_approval"], checkpointer=checkpointer)
+    else:
+        # Compile without checkpointer (for LangGraph Studio)
+        return workflow.compile(interrupt_before=["user_approval"])
 
 
-# Create the default agent instance (without MCP tools for now)
+# Create the default agent instance (with checkpointer for standalone use)
 recipe_agent = create_recipe_agent()
 
 
-async def create_recipe_agent_with_mcp() -> StateGraph:
+async def create_recipe_agent_with_mcp(use_checkpointer: bool = True) -> StateGraph:
     """Create the Recipe Agent graph with MCP tools loaded."""
     try:
         # Initialize MCP tools first
         await initialize_mcp_client()
         # Create agent with MCP tools
-        agent = create_recipe_agent(include_mcp_tools=True)
+        agent = create_recipe_agent(include_mcp_tools=True, use_checkpointer=use_checkpointer)
         logger.info("Successfully created recipe agent with MCP tools")
         return agent
     except Exception as e:
         logger.error(f"Failed to create agent with MCP tools: {e}")
         logger.info("Falling back to agent without MCP tools")
-        return create_recipe_agent(include_mcp_tools=False)
+        return create_recipe_agent(include_mcp_tools=False, use_checkpointer=use_checkpointer)
 
 
 async def run_recipe_agent_with_mcp(query: str, **kwargs) -> dict:

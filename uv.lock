@@ -672,6 +672,19 @@ wheels = [
 ]
 
 [[package]]
+name = "langgraph-cli"
+version = "0.3.6"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "click" },
+    { name = "langgraph-sdk" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/05/5d/3cbafcc7ea4ff820e5798f1ae47c7a1ca094610c28f62b047d69864a0aea/langgraph_cli-0.3.6.tar.gz", hash = "sha256:23f7dfa8209a2dae586a308087bf7683c35db082fca1f602b65686f9348c335b", size = 730032, upload-time = "2025-07-23T23:52:59.588Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d0/74/3798fc7f7672d04e911fcab22a53a551d474b7ca01eb773a52d5f63e94f2/langgraph_cli-0.3.6-py3-none-any.whl", hash = "sha256:86aebbb81cde5492f80ddecce3c814ccf492debf17212b185b718e6f6cdb7c88", size = 36857, upload-time = "2025-07-23T23:52:58.278Z" },
+]
+
+[[package]]
 name = "langgraph-prebuilt"
 version = "0.5.2"
 source = { registry = "https://pypi.org/simple" }
@@ -1243,6 +1256,7 @@ dependencies = [
     { name = "langchain-google-genai" },
     { name = "langchain-mcp-adapters" },
     { name = "langgraph" },
+    { name = "langgraph-cli" },
     { name = "poethepoet" },
     { name = "pydantic" },
     { name = "python-dotenv" },
@@ -1256,6 +1270,7 @@ requires-dist = [
     { name = "langchain-google-genai", specifier = ">=2.1.8" },
     { name = "langchain-mcp-adapters", specifier = ">=0.1.9" },
     { name = "langgraph", specifier = ">=0.5.4" },
+    { name = "langgraph-cli", specifier = ">=0.1.62" },
     { name = "poethepoet", specifier = ">=0.36.0" },
     { name = "pydantic", specifier = ">=2.11.7" },
     { name = "python-dotenv", specifier = ">=1.1.1" },

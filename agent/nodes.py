@@ -528,6 +528,7 @@ def shopping_cart_recommendation_node(state: RecipeAgentState) -> Dict[str, Any]
     display_messages = []
     tool_outputs = state.get("tool_outputs", {})
     selected_recipe = state.get("selected_recipe", {})
+    plan_extract = state.get("plan_extract", "")
     
     if not tool_outputs:
         return {
@@ -540,86 +541,299 @@ def shopping_cart_recommendation_node(state: RecipeAgentState) -> Dict[str, Any]
     shopping_items = []
     store_recommendations = []
     price_comparisons = []
+    ingredient_details = []
+    nutritional_info = []
     
+    def _extract_ingredients_from_text(text):
+        """Extract ingredient information from text using patterns."""
+        ingredients = []
+        lines = text.split('\n')
+        
+        # Common ingredient patterns
+        ingredient_patterns = [
+            r'(\d+(?:\.\d+)?\s*(?:cups?|tbsp|tsp|lbs?|oz|grams?|kg|pounds?|ounces?|tablespoons?|teaspoons?)?)\s+(.+)',
+            r'([^-•*\n]+?)(?:\s*[-–—]\s*\$?\d+\.?\d*)?$',
+            r'•\s*(.+?)(?:\s*\$\d+\.?\d*)?$',
+            r'-\s*(.+?)(?:\s*\$\d+\.?\d*)?$'
+        ]
+        
+        for line in lines:
+            line = line.strip()
+            if not line or len(line) < 3:
+                continue
+                
+            # Skip obvious non-ingredient lines
+            skip_keywords = ['instructions', 'directions', 'steps', 'method', 'preparation', 'note:', 'tip:']
+            if any(keyword in line.lower() for keyword in skip_keywords):
+                continue
+            
+            # Try each pattern
+            for pattern in ingredient_patterns:
+                match = re.search(pattern, line, re.IGNORECASE)
+                if match:
+                    if len(match.groups()) == 2:
+                        # Quantity and ingredient
+                        quantity, ingredient = match.groups()
+                        ingredients.append(f"{quantity.strip()} {ingredient.strip()}")
+                    else:
+                        # Just ingredient
+                        ingredients.append(match.group(1).strip())
+                    break
+            else:
+                # If no pattern matches, check if it looks like an ingredient
+                if any(food_word in line.lower() for food_word in ['chicken', 'beef', 'pork', 'fish', 'vegetables', 'onion', 'garlic', 'salt', 'pepper', 'oil', 'butter', 'flour', 'sugar', 'rice', 'pasta', 'cheese', 'milk', 'eggs', 'tomato']):
+                    ingredients.append(line)
+        
+        return ingredients
+    
+    def _extract_stores_from_text(text):
+        """Extract store information from text."""
+        stores = []
+        lines = text.split('\n')
+        
+        store_keywords = ['market', 'grocery', 'store', 'supermarket', 'shop', 'mart', 'fresh', 'organic', 'whole foods', 'kroger', 'walmart', 'target', 'safeway', 'publix']
+        
+        for line in lines:
+            line = line.strip()
+            if any(keyword in line.lower() for keyword in store_keywords):
+                # Clean up store name
+                store_name = re.sub(r'[•\-*]', '', line).strip()
+                if store_name and len(store_name) > 2:
+                    stores.append(store_name)
+        
+        return stores
+    
+    def _extract_prices_from_text(text):
+        """Extract price information from text."""
+        prices = []
+        # Pattern to match prices
+        price_pattern = r'\$\d+\.?\d*|\d+\.?\d*\s*dollars?|\d+\.?\d*\s*cents?'
+        
+        matches = re.findall(price_pattern, text, re.IGNORECASE)
+        for match in matches:
+            prices.append(match.strip())
+        
+        return prices
+    
+    # Process each tool output
     for tool_id, output in tool_outputs.items():
         if output.get("status") == "success":
             tool_name = output.get("tool_name", "")
             result = output.get("result", "")
             
-            # Extract shopping information based on tool type
-            if "search" in tool_name.lower() or "find" in tool_name.lower():
-                # Parse search results for items and stores
-                if isinstance(result, dict):
-                    items = result.get("items", [])
-                    stores = result.get("stores", [])
-                    prices = result.get("prices", [])
-                    
-                    shopping_items.extend(items)
-                    store_recommendations.extend(stores)
-                    price_comparisons.extend(prices)
-                elif isinstance(result, str):
-                    # Parse text results for shopping information
-                    lines = result.split('\n')
-                    for line in lines:
-                        if any(keyword in line.lower() for keyword in ['store', 'shop', 'market']):
-                            store_recommendations.append(line.strip())
-                        elif any(keyword in line.lower() for keyword in ['item', 'ingredient', 'product']):
-                            shopping_items.append(line.strip())
-                        elif any(keyword in line.lower() for keyword in ['price', '$', 'cost']):
-                            price_comparisons.append(line.strip())
+            # Convert result to string if it's not already
+            if isinstance(result, dict):
+                result_text = str(result)
+                # Try to extract structured data first
+                if 'items' in result:
+                    shopping_items.extend(result.get('items', []))
+                if 'stores' in result:
+                    store_recommendations.extend(result.get('stores', []))
+                if 'prices' in result:
+                    price_comparisons.extend(result.get('prices', []))
+            elif isinstance(result, list):
+                result_text = '\n'.join(str(item) for item in result)
+                shopping_items.extend(result)
+            else:
+                result_text = str(result)
             
-            elif "price" in tool_name.lower() or "compare" in tool_name.lower():
+            # Extract information based on tool type and content
+            if "search" in tool_name.lower() or "find" in tool_name.lower() or "ingredient" in tool_name.lower():
+                # Extract ingredients from search results
+                extracted_ingredients = _extract_ingredients_from_text(result_text)
+                shopping_items.extend(extracted_ingredients)
+                
+                # Extract stores
+                extracted_stores = _extract_stores_from_text(result_text)
+                store_recommendations.extend(extracted_stores)
+                
+                # Extract prices
+                extracted_prices = _extract_prices_from_text(result_text)
+                price_comparisons.extend(extracted_prices)
+            
+            elif "price" in tool_name.lower() or "compare" in tool_name.lower() or "cost" in tool_name.lower():
                 # Handle price comparison results
-                if isinstance(result, (list, dict)):
-                    price_comparisons.append(str(result))
-                else:
-                    price_comparisons.append(result)
+                extracted_prices = _extract_prices_from_text(result_text)
+                price_comparisons.extend(extracted_prices)
+                
+                # Also check for store mentions in price comparisons
+                extracted_stores = _extract_stores_from_text(result_text)
+                store_recommendations.extend(extracted_stores)
+            
+            elif "store" in tool_name.lower() or "shop" in tool_name.lower():
+                # Store-specific results
+                extracted_stores = _extract_stores_from_text(result_text)
+                store_recommendations.extend(extracted_stores)
+            
+            elif "nutrition" in tool_name.lower() or "health" in tool_name.lower():
+                # Nutritional information
+                nutritional_info.append(result_text)
     
-    # Generate shopping cart recommendation
+    # Also extract ingredients from the recipe plan if available
+    if plan_extract:
+        plan_ingredients = _extract_ingredients_from_text(plan_extract)
+        shopping_items.extend(plan_ingredients)
+    
+    # Extract ingredients from the recipe itself
+    if selected_recipe.get('recipe_msg'):
+        recipe_ingredients = _extract_ingredients_from_text(selected_recipe['recipe_msg'])
+        shopping_items.extend(recipe_ingredients)
+    
+    # Extract ingredients from the recipe itself
+    if selected_recipe.get('recipe_msg'):
+        recipe_ingredients = _extract_ingredients_from_text(selected_recipe['recipe_msg'])
+        shopping_items.extend(recipe_ingredients)
+    
+    # Clean and deduplicate the collected data
+    def _clean_and_dedupe(items):
+        """Clean and deduplicate a list of items."""
+        cleaned = []
+        seen = set()
+        for item in items:
+            if isinstance(item, str):
+                # Clean the item
+                cleaned_item = re.sub(r'[•\-*]', '', item).strip()
+                cleaned_item = re.sub(r'\s+', ' ', cleaned_item)  # Remove extra spaces
+                
+                # Skip if too short or already seen
+                if len(cleaned_item) > 2 and cleaned_item.lower() not in seen:
+                    cleaned.append(cleaned_item)
+                    seen.add(cleaned_item.lower())
+        return cleaned
+    
+    # Clean and limit the data
+    shopping_items = _clean_and_dedupe(shopping_items)[:15]  # Limit to 15 items
+    store_recommendations = _clean_and_dedupe(store_recommendations)[:8]  # Limit to 8 stores
+    price_comparisons = _clean_and_dedupe(price_comparisons)[:10]  # Limit to 10 price entries
+    
+    # Generate comprehensive shopping cart recommendation
     recipe_title = selected_recipe.get('title', 'Your Recipe')
     
-    cart_recommendation = f"""🛒 **Shopping Cart Recommendation for {recipe_title}**
+    cart_recommendation = f"""🛒 **Smart Shopping Cart for {recipe_title}**
+
+Based on the analysis of tool responses and your recipe, here's your personalized shopping recommendation:
 
 """
     
+    # Add shopping items section
     if shopping_items:
-        cart_recommendation += "**📋 Recommended Items:**\n"
-        unique_items = list(set(shopping_items))[:10]  # Limit to 10 unique items
-        for i, item in enumerate(unique_items, 1):
-            cart_recommendation += f"{i}. {item}\n"
+        cart_recommendation += "**📋 Shopping List:**\n"
+        
+        # Categorize items if possible
+        produce_items = []
+        pantry_items = []
+        protein_items = []
+        dairy_items = []
+        other_items = []
+        
+        produce_keywords = ['onion', 'garlic', 'tomato', 'pepper', 'carrot', 'celery', 'potato', 'lettuce', 'spinach', 'herb', 'lemon', 'lime', 'apple', 'banana']
+        pantry_keywords = ['flour', 'sugar', 'salt', 'pepper', 'oil', 'vinegar', 'spice', 'rice', 'pasta', 'bread', 'sauce']
+        protein_keywords = ['chicken', 'beef', 'pork', 'fish', 'turkey', 'lamb', 'tofu', 'beans', 'lentil']
+        dairy_keywords = ['milk', 'cheese', 'butter', 'cream', 'yogurt', 'egg']
+        
+        for item in shopping_items:
+            item_lower = item.lower()
+            if any(keyword in item_lower for keyword in produce_keywords):
+                produce_items.append(item)
+            elif any(keyword in item_lower for keyword in protein_keywords):
+                protein_items.append(item)
+            elif any(keyword in item_lower for keyword in dairy_keywords):
+                dairy_items.append(item)
+            elif any(keyword in item_lower for keyword in pantry_keywords):
+                pantry_items.append(item)
+            else:
+                other_items.append(item)
+        
+        # Display categorized items
+        if produce_items:
+            cart_recommendation += "\n**🥬 Fresh Produce:**\n"
+            for i, item in enumerate(produce_items, 1):
+                cart_recommendation += f"  {i}. {item}\n"
+        
+        if protein_items:
+            cart_recommendation += "\n**🥩 Proteins:**\n"
+            for i, item in enumerate(protein_items, 1):
+                cart_recommendation += f"  {i}. {item}\n"
+        
+        if dairy_items:
+            cart_recommendation += "\n**🥛 Dairy & Eggs:**\n"
+            for i, item in enumerate(dairy_items, 1):
+                cart_recommendation += f"  {i}. {item}\n"
+        
+        if pantry_items:
+            cart_recommendation += "\n**🏺 Pantry Staples:**\n"
+            for i, item in enumerate(pantry_items, 1):
+                cart_recommendation += f"  {i}. {item}\n"
+        
+        if other_items:
+            cart_recommendation += "\n**📦 Other Items:**\n"
+            for i, item in enumerate(other_items, 1):
+                cart_recommendation += f"  {i}. {item}\n"
+        
         cart_recommendation += "\n"
+    else:
+        cart_recommendation += "**📋 Shopping List:**\n*No specific items identified from tool responses. Please refer to your recipe for ingredients.*\n\n"
     
+    # Add store recommendations
     if store_recommendations:
         cart_recommendation += "**🏪 Recommended Stores:**\n"
-        unique_stores = list(set(store_recommendations))[:5]  # Limit to 5 unique stores
-        for i, store in enumerate(unique_stores, 1):
-            cart_recommendation += f"{i}. {store}\n"
+        for i, store in enumerate(store_recommendations, 1):
+            cart_recommendation += f"  {i}. {store}\n"
         cart_recommendation += "\n"
     
+    # Add price information
     if price_comparisons:
         cart_recommendation += "**💰 Price Information:**\n"
-        unique_prices = list(set(price_comparisons))[:5]  # Limit to 5 price entries
-        for i, price in enumerate(unique_prices, 1):
-            cart_recommendation += f"{i}. {price}\n"
+        for i, price in enumerate(price_comparisons, 1):
+            cart_recommendation += f"  {i}. {price}\n"
         cart_recommendation += "\n"
     
-    # Add shopping tips
-    cart_recommendation += """**💡 Shopping Tips:**
-• Compare prices across different stores before purchasing
-• Check for seasonal discounts and bulk buying options
-• Consider organic vs. regular options based on your preference
-• Don't forget to check store loyalty programs for additional savings
+    # Add nutritional information if available
+    if nutritional_info:
+        cart_recommendation += "**🍎 Nutritional Notes:**\n"
+        for info in nutritional_info[:3]:  # Limit to 3 entries
+            cart_recommendation += f"• {info[:150]}...\n"
+        cart_recommendation += "\n"
+    
+    # Add smart shopping tips based on the recipe
+    cart_recommendation += """**💡 Smart Shopping Tips:**\n"""
+    
+    # Recipe-specific tips
+    if 'chicken' in recipe_title.lower() or any('chicken' in item.lower() for item in shopping_items):
+        cart_recommendation += "• Buy chicken in family packs and freeze portions for future meals\n"
+    
+    if any('vegetable' in item.lower() or 'produce' in item.lower() for item in shopping_items):
+        cart_recommendation += "• Shop for produce early in the morning for the freshest selection\n"
+    
+    cart_recommendation += """• Compare unit prices rather than package prices for better value
+• Check store apps for digital coupons before shopping
+• Consider buying non-perishables in bulk if you cook this recipe often
+• Don't shop when hungry to avoid impulse purchases
+• Bring a reusable shopping list to stay organized
+
+**🎯 Estimated Shopping Time:** 30-45 minutes
+**💳 Money-Saving Tip:** Look for store brands on pantry staples - they're often 20-30% cheaper!
 
 **Ready to go shopping? Happy cooking! 👨‍🍳👩‍🍳**"""
     
     display_messages.append(cart_recommendation)
     
-    # Store shopping cart data in state
+    # Store comprehensive shopping cart data in state
     shopping_cart_data = {
-        "items": shopping_items,
+        "items": {
+            "produce": produce_items if 'produce_items' in locals() else [],
+            "proteins": protein_items if 'protein_items' in locals() else [],
+            "dairy": dairy_items if 'dairy_items' in locals() else [],
+            "pantry": pantry_items if 'pantry_items' in locals() else [],
+            "other": other_items if 'other_items' in locals() else [],
+            "all_items": shopping_items
+        },
         "stores": store_recommendations,
         "prices": price_comparisons,
-        "recommendation_generated": True
+        "nutritional_info": nutritional_info,
+        "total_items": len(shopping_items),
+        "recommendation_generated": True,
+        "recipe_title": recipe_title
     }
     
     return {
