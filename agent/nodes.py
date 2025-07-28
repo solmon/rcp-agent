@@ -39,7 +39,8 @@ def classify_intent_node(state: RecipeAgentState) -> Dict[str, Any]:
     
     return {
         "intent": intent,
-        "workflow_stage": "initial"
+        "workflow_stage": "initial",
+        "display_messages": [f"🔍 Understanding your request: '{user_query}'"]
     }
 
 # --- Modularized LLM Node Logic ---
@@ -57,7 +58,8 @@ def _select_llm_prompts_and_tools(state: RecipeAgentState):
         if mcp_tools:
             all_tools.extend(mcp_tools)
         
-        recipe_plan = state.get("plan_extract", {})
+        # recipe_plan = state.get("plan_extract", {})
+        recipe_plan=state.get("selected_recipe", {})
         tool_names = ", ".join([tool.name for tool in all_tools])
         num_tools = len(all_tools)
         rendered_prompt = [
@@ -137,7 +139,8 @@ async def llm_node(state: RecipeAgentState) -> Dict[str, Any]:
                 return {
                     "messages": [],
                     "recipes": state["recipes"],
-                    "workflow_stage": "recipe_display"
+                    "workflow_stage": "recipe_display",
+                    "display_messages": ["🍳 Here are some mock recipes for testing!"]
                 }
         
         # LLM invocation
@@ -152,7 +155,8 @@ async def llm_node(state: RecipeAgentState) -> Dict[str, Any]:
                 "messages": messages,
                 "workflow_stage": "recipe_plan_display",
                 "plan_extract": plan_extract,
-                "recipe_plan_confirmed": False                
+                "recipe_plan_confirmed": False,
+                "display_messages": [response.content]
             }
         elif mode == "execute":
             messages.append(AIMessage(content=response.content))
@@ -163,14 +167,16 @@ async def llm_node(state: RecipeAgentState) -> Dict[str, Any]:
                     "messages": messages,
                     "workflow_stage": "tool_execution",
                     "pending_tool_calls": response.tool_calls,
-                    "tool_outputs": {}
+                    "tool_outputs": {},
+                    "display_messages": [response.content]
                 }
             else:
                 # No tool calls, return response directly
                 return {
                     "messages": messages,
                     "workflow_stage": "recipe_execution_complete",
-                    "tool_outputs": {"response": response.content}
+                    "tool_outputs": {"response": response.content},
+                    "display_messages": [response.content]
                 }
         else:
             messages.append(AIMessage(content=response.content))
@@ -180,13 +186,16 @@ async def llm_node(state: RecipeAgentState) -> Dict[str, Any]:
             return {
                 "messages": messages,
                 "recipes": state["recipes"],
-                "workflow_stage": "recipe_display"                
+                "workflow_stage": "recipe_display",
+                "display_messages": [response.content]
             }
 
     except Exception as e:
+        error_msg = f"Error in LLM node: {str(e)}"
         return {
-            "error_message": f"Error in LLM node: {str(e)}",
-            "processing_complete": True
+            "error_message": error_msg,
+            "processing_complete": True,
+            "display_messages": [f"❌ {error_msg}"]
         }
 
 
@@ -278,7 +287,8 @@ def user_approval_node(state: RecipeAgentState) -> Dict[str, Any]:
         if human_response in ["yes", "proceed", "continue", "plan", "cook"]:
             return {
                 "recipe_confirmed": True,
-                "workflow_stage": "recipe_planning",
+                "recipe_plan_confirmed": True,
+                "workflow_stage": "recipe_execution",
                 "display_messages": display_messages,
                 "processing_complete": False
             }

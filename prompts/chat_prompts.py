@@ -12,7 +12,7 @@ GROCERY_CHAT_PROMPT = HumanMessagePromptTemplate.from_template(
 
 # Chat prompt for grocery search
 GROCERY_EXEC_CHAT_PROMPT = HumanMessagePromptTemplate.from_template(
-    "Attaching the plan that was identified in the previous for tool chains plan identified:{user_query}"
+    "Recipe article content is: {user_query}\nContext: \n\nProvide a detailed plan for execution by agent and all the mcp tool calls necessary at once so that i can execute in parallel."    
 )
 
 RECIPE_ARTICLE_CHAT_PROMPT = HumanMessagePromptTemplate.from_template(

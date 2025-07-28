@@ -8,3 +8,5 @@ langgraph-cli>=0.1.62
 pydantic>=2.11.7
 python-dotenv>=1.1.1
 langgraph-cli[inmem]
+fastapi>=0.104.1
+uvicorn>=0.24.0

@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Recipe Agent UI</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            background: linear-gradient(135deg, #1e3a8a 0%, #1e40af 50%, #1d4ed8 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .container {
+            width: 100%;
+            max-width: 900px;
+            height: 85vh;
+            background: #0f172a;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            border: 1px solid #334155;
+        }
+        
+        .header {
+            background: linear-gradient(45deg, #1e40af, #3b82f6);
+            color: white;
+            padding: 25px;
+            text-align: center;
+            border-bottom: 2px solid #1d4ed8;
+        }
+        
+        .header h1 {
+            font-size: 2.2rem;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+        
+        .header p {
+            opacity: 0.9;
+            font-size: 1.1rem;
+        }
+        
+        .chat-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        
+        .messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            background: #1e293b;
+        }
+        
+        .message {
+            margin-bottom: 15px;
+            padding: 15px 20px;
+            border-radius: 15px;
+            max-width: 80%;
+            line-height: 1.5;
+            animation: fadeIn 0.3s ease-in;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            font-family: inherit;
+        }
+        
+        .message.user {
+            background: #3b82f6;
+            color: white;
+            margin-left: auto;
+            border-bottom-right-radius: 5px;
+            border: 1px solid #2563eb;
+        }
+        
+        .message.assistant {
+            background: #334155;
+            color: #e2e8f0;
+            border: 1px solid #475569;
+            border-bottom-left-radius: 5px;
+        }
+        
+        .message.status {
+            background: #1e40af;
+            color: #dbeafe;
+            font-style: italic;
+            text-align: center;
+            margin: 10px auto;
+            max-width: 60%;
+            border: 1px solid #2563eb;
+        }
+        
+        .message.error {
+            background: #7f1d1d;
+            color: #fecaca;
+            border-left: 4px solid #dc2626;
+        }
+        
+        .input-container {
+            padding: 20px;
+            background: #0f172a;
+            border-top: 1px solid #334155;
+            display: flex;
+            gap: 10px;
+        }
+        
+        .input-box {
+            flex: 1;
+            padding: 15px 20px;
+            border: 2px solid #475569;
+            border-radius: 25px;
+            font-size: 16px;
+            outline: none;
+            transition: border-color 0.3s ease;
+            background: #1e293b;
+            color: #e2e8f0;
+        }
+        
+        .input-box:focus {
+            border-color: #3b82f6;
+            background: #334155;
+        }
+        
+        .input-box::placeholder {
+            color: #94a3b8;
+        }
+        
+        .send-button {
+            padding: 15px 25px;
+            background: linear-gradient(45deg, #1e40af, #3b82f6);
+            color: white;
+            border: none;
+            border-radius: 25px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s ease, background 0.2s ease;
+        }
+        
+        .send-button:hover:not(:disabled) {
+            transform: translateY(-2px);
+            background: linear-gradient(45deg, #1d4ed8, #2563eb);
+        }
+        
+        .send-button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        
+        .welcome-message {
+            text-align: center;
+            padding: 40px 20px;
+            color: #94a3b8;
+        }
+        
+        .welcome-message h3 {
+            color: #e2e8f0;
+            margin-bottom: 15px;
+        }
+        
+        .suggestions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            justify-content: center;
+            margin-top: 20px;
+        }
+        
+        .suggestion {
+            padding: 8px 15px;
+            background: #1e40af;
+            color: #dbeafe;
+            border: 1px solid #2563eb;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.2s ease;
+        }
+        
+        .suggestion:hover {
+            background: #1d4ed8;
+            color: white;
+        }
+        
+        .typing-indicator {
+            display: none;
+            padding: 15px 20px;
+            color: #94a3b8;
+            font-style: italic;
+        }
+        
+        .typing-indicator.show {
+            display: block;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🍳 Recipe Agent</h1>
+            <p>Your AI-powered cooking companion</p>
+        </div>
+        
+        <div class="chat-container">
+            <div id="messages" class="messages">
+                <div class="welcome-message">
+                    <h3>Welcome! How can I help you cook today?</h3>
+                    <p>Ask me about recipes, ingredients, meal planning, or cooking tips!</p>
+                    <div class="suggestions">
+                        <button class="suggestion" onclick="sendSuggestion('Find me a recipe for chocolate cake')">🍰 Chocolate Cake Recipe</button>
+                        <button class="suggestion" onclick="sendSuggestion('What ingredients do I need for pasta carbonara?')">🍝 Pasta Ingredients</button>
+                        <button class="suggestion" onclick="sendSuggestion('Create a meal plan for this week')">📅 Weekly Meal Plan</button>
+                        <button class="suggestion" onclick="sendSuggestion('Help me make a shopping list')">🛒 Shopping List</button>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="typing" class="typing-indicator">
+                🤔 Recipe Agent is thinking...
+            </div>
+            
+            <div class="input-container">
+                <input 
+                    id="messageInput" 
+                    type="text" 
+                    class="input-box" 
+                    placeholder="Ask me about recipes, ingredients, or cooking tips! 🍳"
+                    maxlength="500"
+                >
+                <button id="sendButton" class="send-button" onclick="sendMessage()">
+                    Send 🚀
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const messagesContainer = document.getElementById('messages');
+        const messageInput = document.getElementById('messageInput');
+        const sendButton = document.getElementById('sendButton');
+        const typingIndicator = document.getElementById('typing');
+        
+        // Session management
+        let currentSessionId = null;
+        let isWaitingForApproval = false;
+        
+        // Auto-scroll to bottom
+        function scrollToBottom() {
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+        
+        // Format text content to preserve newlines and spacing
+        function formatContent(content) {
+            let formatted = content;
+            
+            // Escape HTML characters first
+            const div = document.createElement('div');
+            div.textContent = formatted;
+            formatted = div.innerHTML;
+            
+            // Convert newlines to <br> tags
+            formatted = formatted.split('\n').join('<br>');
+            
+            // Convert multiple spaces to non-breaking spaces
+            formatted = formatted.replace(/ {2,}/g, function(match) {
+                return '&nbsp;'.repeat(match.length);
+            });
+            
+            return formatted;
+        }
+        
+        // Add message to chat
+        function addMessage(content, type = 'assistant') {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${type}`;
+            messageDiv.innerHTML = formatContent(content);
+            messagesContainer.appendChild(messageDiv);
+            scrollToBottom();
+        }
+        
+        // Show/hide typing indicator
+        function setTyping(show) {
+            typingIndicator.classList.toggle('show', show);
+            if (show) {
+                typingIndicator.textContent = isWaitingForApproval ? 
+                    '⏸️ Waiting for your approval...' : 
+                    '🤔 Recipe Agent is thinking...';
+            }
+            scrollToBottom();
+        }
+        
+        // Send message
+        async function sendMessage() {
+            const message = messageInput.value.trim();
+            if (!message) return;
+            
+            // Clear welcome message if it exists
+            const welcomeMsg = messagesContainer.querySelector('.welcome-message');
+            if (welcomeMsg) {
+                welcomeMsg.remove();
+            }
+            
+            // Add user message
+            addMessage(message, 'user');
+            messageInput.value = '';
+            
+            // Disable input
+            sendButton.disabled = true;
+            messageInput.disabled = true;
+            setTyping(true);
+            
+            try {
+                const requestBody = { 
+                    message: message
+                };
+                
+                // Include session ID if we have one
+                if (currentSessionId) {
+                    requestBody.session_id = currentSessionId;
+                }
+                
+                const response = await fetch('/api/chat/stream', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(requestBody)
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+                
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+                
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    
+                    // Keep the last incomplete line in buffer
+                    buffer = lines.pop() || '';
+                    
+                    for (const line of lines) {
+                        const trimmedLine = line.trim();
+                        if (trimmedLine.startsWith('data: ')) {
+                            try {
+                                const jsonData = trimmedLine.slice(6);
+                                const data = JSON.parse(jsonData);
+                                console.log('Received data:', data); // Debug logging
+                                
+                                // Store session ID for future requests
+                                if (data.session_id && !currentSessionId) {
+                                    currentSessionId = data.session_id;
+                                }
+                                
+                                if (data.type === 'message') {
+                                    console.log('Adding message:', data.content); // Debug logging
+                                    addMessage(data.content, 'assistant');
+                                } else if (data.type === 'status' || data.type === 'stage') {
+                                    console.log('Adding status:', data.message); // Debug logging
+                                    addMessage(data.message, 'status');
+                                } else if (data.type === 'error') {
+                                    addMessage(data.message, 'error');
+                                } else if (data.type === 'interrupt') {
+                                    // Handle interrupt - waiting for approval
+                                    addMessage(data.message, 'status');
+                                    isWaitingForApproval = true;
+                                    setTyping(false);
+                                    
+                                    // Re-enable input for user response
+                                    sendButton.disabled = false;
+                                    messageInput.disabled = false;
+                                    messageInput.placeholder = "Your response to continue the workflow...";
+                                    messageInput.focus();
+                                    
+                                    // Don't continue reading - wait for user input
+                                    return;
+                                    
+                                } else if (data.type === 'complete') {
+                                    // Workflow completed
+                                    addMessage('✅ Workflow completed!', 'status');
+                                    currentSessionId = null; // Reset session
+                                    isWaitingForApproval = false;
+                                }
+                            } catch (e) {
+                                console.error('Error parsing SSE data:', e);
+                            }
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                addMessage('Sorry, there was an error processing your request. Please try again.', 'error');
+            } finally {
+                // Re-enable input only if not waiting for approval
+                if (!isWaitingForApproval) {
+                    setTyping(false);
+                    sendButton.disabled = false;
+                    messageInput.disabled = false;
+                    messageInput.placeholder = "Ask me about recipes, ingredients, or cooking tips! 🍳";
+                    messageInput.focus();
+                }
+            }
+        }
+        
+        // Send suggestion
+        function sendSuggestion(text) {
+            messageInput.value = text;
+            sendMessage();
+        }
+        
+        // Handle Enter key
+        messageInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+        
+        // Focus input on load
+        messageInput.focus();
+    </script>
+</body>
+</html>

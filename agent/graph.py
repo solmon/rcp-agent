@@ -110,8 +110,8 @@ def create_recipe_agent(include_mcp_tools: bool = False, use_checkpointer: bool 
     workflow.add_node("classify_intent", classify_intent_node)
     workflow.add_node("recipe_llm", llm_node)  # Unified LLM node
     workflow.add_node("recipe_confirmation", recipe_confirmation_node)
-    workflow.add_node("recipe_plan_llm", llm_node)  # Unified LLM node
-    workflow.add_node("recipe_plan_confirmation", recipe_plan_confirm_node)    
+    # workflow.add_node("recipe_plan_llm", llm_node)  # Unified LLM node
+    # workflow.add_node("recipe_plan_confirmation", recipe_plan_confirm_node)    
     workflow.add_node("recipe_execution_llm", llm_node)  # Unified LLM node
     workflow.add_node("user_approval", user_approval_node)  # New approval node
     workflow.add_node("tool_execution", tool_execution_node)  # New tool execution node
@@ -159,18 +159,18 @@ def create_recipe_agent(include_mcp_tools: bool = False, use_checkpointer: bool 
     # Recipe confirmation -> User approval (interrupt point)
     workflow.add_edge("recipe_confirmation", "user_approval")
 
-    # Recipe plan LLM -> Recipe plan confirmation (interrupt point)
-    workflow.add_conditional_edges(
-        "recipe_plan_llm",
-        lambda state: "recipe_plan_confirmation" if state.get("plan_extract") else "end",
-        {
-            "recipe_plan_confirmation": "recipe_plan_confirmation",
-            "end": END
-        }
-    )
+    # # Recipe plan LLM -> Recipe plan confirmation (interrupt point)
+    # workflow.add_conditional_edges(
+    #     "recipe_plan_llm",
+    #     lambda state: "recipe_plan_confirmation" if state.get("plan_extract") else "end",
+    #     {
+    #         "recipe_plan_confirmation": "recipe_plan_confirmation",
+    #         "end": END
+    #     }
+    # )
     
     # Recipe plan confirmation -> User approval (interrupt point)
-    workflow.add_edge("recipe_plan_confirmation", "user_approval")
+    # workflow.add_edge("recipe_plan_confirmation", "user_approval")
     
     # User approval -> Route based on confirmation state
     workflow.add_conditional_edges(
