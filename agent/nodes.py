@@ -121,7 +121,7 @@ async def llm_node(state: RecipeAgentState) -> Dict[str, Any]:
     user_query = state.get("user_query", "")
     # LLM setup
     llm = ChatGoogleGenerativeAI(
-        model="gemini-2.5-flash",
+        model="gemini-2.0-flash",
         google_api_key=GEMINI_API_KEY,
         temperature=0.1,
         transport="rest",
