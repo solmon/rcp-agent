@@ -587,7 +587,7 @@ Your task:
 2. Generate appropriate add-to-cart tool calls for the best available options
 3. Focus on creating actionable shopping cart additions
 
-Generate tool calls to add items to shopping carts at the most suitable stores based on the search results."""
+Generate tool calls to add items to shopping carts at the most suitable stores based on the search results. and create all the tool calls needed to add items to the shopping cart at once."""
 
     # Get available MCP tools for shopping cart operations
     from agent.graph import get_mcp_tools
