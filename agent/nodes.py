@@ -18,7 +18,9 @@ from prompts.chat_prompts import RECIPE_CHAT_PROMPT, GROCERY_CHAT_PROMPT, RECIPE
 
 load_dotenv()
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
-
+os.environ["CURL_CA_BUNDLE"] = "/home/solmon/github/questmind/zscaler_root.crt"
+os.environ["REQUESTS_CA_BUNDLE"] = "/home/solmon/github/questmind/zscaler_root.crt"
+os.environ["GRPC_DEFAULT_SSL_ROOTS_FILE_PATH"] = "/home/solmon/github/questmind/zscaler_root.crt"
 
 def stream_message(state: RecipeAgentState, message: str):
     """Stream a message to the UI (currently just prints)."""
@@ -127,7 +129,12 @@ async def llm_node(state: RecipeAgentState) -> Dict[str, Any]:
         google_api_key=GEMINI_API_KEY,
         temperature=0.1,
         transport="rest",
-        client_options={"api_endpoint": "https://generativelanguage.googleapis.com"}
+        client_options={
+            "api_endpoint": "https://generativelanguage.googleapis.com"
+        },
+        model_kwargs={
+            "enable_thinking": True  # If you want to enable this feature,            
+        }
     )
     try:
         # Mock for recipe mode

@@ -1,8 +1,29 @@
 import asyncio
 import uuid
+import os
 from langchain_core.messages import HumanMessage
 from agent.graph import create_recipe_agent_with_mcp, recipe_agent
 from agent.state import RecipeAgentState
+from langfuse import Langfuse
+
+# Langfuse monitoring setup
+try:
+    LANGFUSE_PUBLIC_KEY = os.environ.get("LANGFUSE_PUBLIC_KEY", "dev-api-key")
+    LANGFUSE_SECRET_KEY = os.environ.get("LANGFUSE_SECRET_KEY", "dev-secret-key")
+    LANGFUSE_HOST = os.environ.get("LANGFUSE_HOST", "http://localhost:3000")
+    langfuse = Langfuse(
+        public_key=LANGFUSE_PUBLIC_KEY,
+        secret_key=LANGFUSE_SECRET_KEY,
+        host=LANGFUSE_HOST
+    )
+    # langfuse = Langfuse(
+    #     secret_key="sk-lf-38b56ec9-0194-4c38-9f3e-104cde792313",
+    #     public_key="pk-lf-80b2ef91-821f-488a-9f1d-93ba683ada18",
+    #     host="http://localhost:3000"
+    # )
+except ImportError:
+    langfuse = None
+    print("Langfuse not installed. Monitoring disabled.")
 
 
 def display_messages(state_update):

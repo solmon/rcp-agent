@@ -17,6 +17,8 @@ dependencies = [
     "python-dotenv>=1.1.1",
     "fastapi>=0.104.1",
     "uvicorn>=0.24.0",
+    "certifi",
+    "langfuse>=3.2.1"
 ]
 
 [tool.poe.tasks]
