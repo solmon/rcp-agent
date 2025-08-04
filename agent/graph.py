@@ -9,7 +9,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from langchain_core.messages import HumanMessage
 from langchain_core.tools import BaseTool
 
-from langfuse.callback import CallbackHandler
+from langfuse.langchain import CallbackHandler
 langfuse_handler = CallbackHandler()
 
 from agent.state import RecipeAgentState
