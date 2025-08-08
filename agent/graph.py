@@ -55,7 +55,7 @@ async def initialize_mcp_client():
             {
                 "grocery": {
                     "transport": "streamable_http",
-                    "url": "http://localhost:8000/mcp/"
+                    "url": "http://localhost:8001/mcp/"
                 },
             }
         )

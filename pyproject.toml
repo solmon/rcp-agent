@@ -18,7 +18,12 @@ dependencies = [
     "fastapi>=0.104.1",
     "uvicorn>=0.24.0",
     "certifi",
-    "langfuse>=3.2.1"
+    "langfuse>=3.2.1",
+    "langchain-qwq>=0.2.0",
+    "openai>=1.99.1",
+    "langchain-openai>=0.3.28",
+    "langchain-anthropic>=0.1.23",
+    "tavily-python>=0.7.10"
 ]
 
 [tool.poe.tasks]

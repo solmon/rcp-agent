@@ -9,22 +9,48 @@ from typing import Dict, Any
 import re
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
+from agent.model import get_default_model
 from agent.state import RecipeAgentState
 from agent.tools import recipe_tools
 from agent.tools import mock_recipes
 # context7 prompt imports
 from prompts.system_prompts import RECIPE_SYSTEM_PROMPT, GROCERY_SYSTEM_PROMPT, RECIPE_PLAN_SYSTEM_PROMPT, GROCERY_EXEC_SYSTEM_PROMPT
 from prompts.chat_prompts import RECIPE_CHAT_PROMPT, GROCERY_CHAT_PROMPT, RECIPE_ARTICLE_CHAT_PROMPT, GROCERY_EXEC_CHAT_PROMPT
+from tavily import TavilyClient
 
 load_dotenv()
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
-os.environ["CURL_CA_BUNDLE"] = "/home/solmon/github/questmind/zscaler_root.crt"
-os.environ["REQUESTS_CA_BUNDLE"] = "/home/solmon/github/questmind/zscaler_root.crt"
-os.environ["GRPC_DEFAULT_SSL_ROOTS_FILE_PATH"] = "/home/solmon/github/questmind/zscaler_root.crt"
+# os.environ["CURL_CA_BUNDLE"] = "/home/solmon/github/questmind/zscaler_root.crt"
+# os.environ["REQUESTS_CA_BUNDLE"] = "/home/solmon/github/questmind/zscaler_root.crt"
+# os.environ["GRPC_DEFAULT_SSL_ROOTS_FILE_PATH"] = "/home/solmon/github/questmind/zscaler_root.crt"
 
 def stream_message(state: RecipeAgentState, message: str):
     """Stream a message to the UI (currently just prints)."""
     # print(f"📢 {message}")
+
+def internet_search(
+        query: str,
+        max_results: int = 2,
+        topic: str = "general",
+        include_raw_content: bool = False,
+    ):
+        """
+        Run a web search using Tavily.
+        Args:
+            query (str): The search query.
+            max_results (int): Maximum number of results to return.
+            topic (str): Search topic (general, news, finance).
+            include_raw_content (bool): Whether to include raw content in results.
+        Returns:
+            dict: Search results from Tavily API.
+        """
+        tavily_async_client = TavilyClient(api_key=os.environ["TAVILY_API_KEY"])
+        return tavily_async_client.search(
+            query,
+            max_results=max_results,
+            include_raw_content=include_raw_content,
+            topic=topic,
+        )
 
 
 def classify_intent_node(state: RecipeAgentState) -> Dict[str, Any]:
@@ -118,24 +144,114 @@ def _extract_recipes_from_response(response):
         })
     return recipes
 
+def _extract_recipes_from_tavily_response(tavily_response):
+    """Extract recipes from Tavily internet search API response."""
+    recipes = []
+    
+    if not tavily_response or not isinstance(tavily_response, dict):
+        return recipes
+    
+    # Tavily response typically has 'results' key with search results
+    results = tavily_response.get('results', [])
+    
+    for result in results:
+        # Extract basic information from each search result
+        title = result.get('title', '')
+        content = result.get('content', '')
+        url = result.get('url', '')
+        
+        # Skip if no content
+        if not content or not title:
+            continue
+        
+        # Check if this result is likely a recipe
+        recipe_indicators = ['recipe', 'ingredients', 'instructions', 'cooking', 'baking', 'cook', 'preparation', 'serves', 'prep time']
+        content_lower = content.lower()
+        title_lower = title.lower()
+        
+        is_recipe = any(indicator in content_lower or indicator in title_lower for indicator in recipe_indicators)
+        
+        if is_recipe:
+            # Clean and format the title
+            recipe_title = title.strip()
+            
+            # If title doesn't contain "recipe", try to extract a better title from content
+            if 'recipe' not in title_lower:
+                # Look for recipe title patterns in content
+                title_patterns = [
+                    r'^([^\n]+(?:recipe|dish|meal)[^\n]*)',
+                    r'(?:recipe for |how to make |preparing )(.*?)(?:\n|$)',
+                    r'^([A-Z][^.\n]+(?:chicken|beef|pasta|soup|salad|cake|bread)[^.\n]*)'
+                ]
+                
+                for pattern in title_patterns:
+                    match = re.search(pattern, content, re.IGNORECASE | re.MULTILINE)
+                    if match:
+                        extracted_title = match.group(1).strip()
+                        if len(extracted_title) > 5 and len(extracted_title) < 100:
+                            recipe_title = extracted_title
+                        break
+            
+            # Combine content with source information
+            recipe_content = f"**{recipe_title}**\n\n"
+            recipe_content += f"*Source: {url}*\n\n"
+            recipe_content += content
+            
+            # Add any additional raw content if available
+            if 'raw_content' in result and result['raw_content']:
+                recipe_content += f"\n\n**Additional Details:**\n{result['raw_content'][:500]}..."
+            
+            recipes.append({
+                "title": recipe_title,
+                "recipe_msg": recipe_content,
+                "source_url": url,
+                "search_score": result.get('score', 0)
+            })
+    
+    # Sort recipes by search score (highest first) and limit to top results
+    recipes.sort(key=lambda x: x.get('search_score', 0), reverse=True)
+    
+    # If no recipes found but we have general results, convert them
+    if not recipes and results:
+        for result in results[:3]:  # Take top 3 results
+            title = result.get('title', 'Search Result')
+            content = result.get('content', '')
+            url = result.get('url', '')
+            
+            if content:
+                recipe_content = f"**{title}**\n\n"
+                recipe_content += f"*Source: {url}*\n\n"
+                recipe_content += content
+                
+                recipes.append({
+                    "title": title,
+                    "recipe_msg": recipe_content,
+                    "source_url": url,
+                    "search_score": result.get('score', 0)
+                })
+    
+    return recipes[:5]  # Limit to top 5 recipes
+
+
 async def llm_node(state: RecipeAgentState) -> Dict[str, Any]:
     """Unified and modular LLM node for both recipe and grocery workflow stages."""
     # Select prompts and tools
     rendered_prompt, all_tools, mode = _select_llm_prompts_and_tools(state)
     user_query = state.get("user_query", "")
     # LLM setup
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-2.0-flash",
-        google_api_key=GEMINI_API_KEY,
-        temperature=0.1,
-        transport="rest",
-        client_options={
-            "api_endpoint": "https://generativelanguage.googleapis.com"
-        },
-        model_kwargs={
-            "enable_thinking": True  # If you want to enable this feature,            
-        }
-    )
+    llm = get_default_model(mode=mode)
+    # llm = ChatGoogleGenerativeAI(
+    #     model="gemini-2.0-flash",
+    #     google_api_key=GEMINI_API_KEY,
+    #     temperature=0.1,
+    #     transport="rest",
+    #     client_options={
+    #         "api_endpoint": "https://generativelanguage.googleapis.com"
+    #     },
+    #     model_kwargs={
+    #         "enable_thinking": True  # If you want to enable this feature,            
+    #     }
+    # )
     try:
         # Mock for recipe mode
         if mode == "recipe":
@@ -150,8 +266,12 @@ async def llm_node(state: RecipeAgentState) -> Dict[str, Any]:
                     "display_messages": ["🍳 Here are some mock recipes for testing!"]
                 }
         
-        # LLM invocation
         response = await _invoke_llm_with_tools(llm, rendered_prompt, all_tools if mode in ["plan","execute"] else None)
+        # LLM invocation
+        # if mode == "recipe":
+        #     response = internet_search(user_query, max_results=1, topic="general", include_raw_content=True)
+        # else:
+        #     response = await _invoke_llm_with_tools(llm, rendered_prompt, all_tools if mode in ["plan","execute"] else None)
         # print(f"LLM Response: {getattr(response, 'content', response)}")
         messages = state.get("messages", [])
         
@@ -187,7 +307,9 @@ async def llm_node(state: RecipeAgentState) -> Dict[str, Any]:
                 }
         else:
             messages.append(AIMessage(content=response.content))
+            # messages.append(response)
             recipes = _extract_recipes_from_response(response)
+            # recipes = _extract_recipes_from_tavily_response(response)
             if recipes:
                 state["recipes"] = recipes
             return {
@@ -617,13 +739,14 @@ Generate tool calls to add items to shopping carts at the most suitable stores b
         cart_tools = all_tools
     
     # LLM setup for cart creation
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-2.0-flash",
-        google_api_key=GEMINI_API_KEY,
-        temperature=0.1,
-        transport="rest",
-        client_options={"api_endpoint": "https://generativelanguage.googleapis.com"}
-    )
+    llm = get_default_model()
+    # llm = ChatGoogleGenerativeAI(
+    #     model="gemini-2.0-flash",
+    #     google_api_key=GEMINI_API_KEY,
+    #     temperature=0.1,
+    #     transport="rest",
+    #     client_options={"api_endpoint": "https://generativelanguage.googleapis.com"}
+    # )
     
     try:
         display_messages.append("🛒 Creating shopping cart from search results...")
